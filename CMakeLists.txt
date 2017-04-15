@@ -1,7 +1,7 @@
 
 cmake_minimum_required (VERSION 2.8.12)
 project (CS225A)
-SET(CMAKE_CXX_FLAGS "-std=c++11")
+SET(CMAKE_CXX_FLAGS "-std=c++11 -I/usr/include -I/usr/local/include")
 
 # set common source
 set (CS225A_COMMON_SOURCE
@@ -72,3 +72,4 @@ set (CS225A_BINARY_DIR ${PROJECT_SOURCE_DIR}/bin)
 add_subdirectory(src/visualization)
 add_subdirectory(src/simulation)
 add_subdirectory(src/hw0)
+add_subdirectory(src/hw1)
