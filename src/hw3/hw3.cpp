@@ -2,6 +2,8 @@
 #include "redis/RedisClient.h"
 #include "timer/LoopTimer.h"
 
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -35,6 +37,10 @@ static std::string KP_JOINT_KEY = "";
 static std::string KV_JOINT_KEY = "";
 static std::string KP_JOINT_INIT_KEY = "";
 static std::string KV_JOINT_INIT_KEY = "";
+static std::string OPTION_KEY = "";
+static std::string ROTATION_MATRIX_KEY = "";
+static std::string DESIRED_POS_KEY_OP = "";
+static std::string DESIRED_POS_KEY_JOINT = "";
 
 // Function to parse command line arguments
 void parseCommandline(int argc, char** argv);
@@ -55,7 +61,10 @@ int main(int argc, char** argv) {
 	KV_JOINT_KEY                = "cs225a::robot::" + robot_name + "::tasks::kv_joint";
 	KP_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kp_joint_init";
 	KV_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kv_joint_init";
-
+	OPTION_KEY                  = "cs225a::robot::" + robot_name + "::control::option_key";
+	ROTATION_MATRIX_KEY         = "cs225a::robot::" + robot_name + "::tasks::rotation_matrix";
+	DESIRED_POS_KEY_OP          = "cs225a::robot::" + robot_name + "::tasks::desired_task_pos";
+	
 	cout << "Loading URDF world model file: " << world_file << endl;
 	cout << JOINT_ANGLES_KEY << endl;
 	cout << JOINT_VELOCITIES_KEY << endl;
@@ -183,14 +192,53 @@ int main(int argc, char** argv) {
 		redis_buf = to_string(kv_joint);
 		redis_client.setCommandIs(KV_JOINT_KEY, redis_buf);
 	}
-
+	
 	// Initialize controller variables
+	Eigen::MatrixXd lambda_small(3, 3);
+	Eigen::MatrixXd lambda_big(6, 6);
+	Eigen::MatrixXd jv(3, dof);
+	Eigen::MatrixXd jw(3, dof);
+	Eigen::MatrixXd j(6, dof);
+	Eigen::MatrixXd N(7, 7);
 
+	Eigen::Vector3d current_angl_vel;
+	Eigen::Vector3d current_task_vel;
+	Eigen::Vector3d current_task_pos;
+	Eigen::Vector3d desired_task_pos;	
+	Eigen::Vector3d desired_task_vel;
+
+	Eigen::VectorXd desired_joint_pos = robot->_q;
+	cout << desired_joint_pos.transpose() << endl;
+	Eigen::Vector3d pos_in_frame = Eigen::Vector3d::Zero();
+	cout << pos_in_frame.transpose() << endl;
+	
+	Eigen::Matrix3d rotation_current;
+	Eigen::Matrix3d rotation_desired;
+	Eigen::Vector3d rotation_vec1;
+	Eigen::Vector3d rotation_vec2;
+	Eigen::Vector3d orient_error;
+
+	Eigen::VectorXd diff_rotation(6);
+	Eigen::VectorXd diff_position(3);
+	Eigen::VectorXd diff_joint2(dof);
+	Eigen::VectorXd diff_joint(dof);
+	Eigen::VectorXd diff_pos2(3);
+	
+	double s;
+	
+	/* Initialize Desired Option/Position/Orientation */
+
+	redis_client.getCommandIs(OPTION_KEY, redis_buf); int option = stoi(redis_buf); 
+	redis_client.getEigenMatrixDerivedString(ROTATION_MATRIX_KEY, rotation_desired);
+	cerr << rotation_desired << endl;
+	redis_client.getEigenMatrixDerivedString(DESIRED_POS_KEY_OP, desired_task_pos);
+	cerr << desired_task_pos << endl;
+	
 	// While window is open:
 	while (runloop) {
-
-		// Wait for next scheduled loop (controller must run at precise rate)
-		timer.waitForNextLoop();
+	  
+	  // Wait for next scheduled loop (controller must run at precise rate)
+	  timer.waitForNextLoop();
 
 		// Get current simulation timestamp from Redis
 		redis_client.getCommandIs(TIMESTAMP_KEY, redis_buf);
@@ -217,12 +265,58 @@ int main(int argc, char** argv) {
 		redis_client.getCommandIs(KV_JOINT_KEY, redis_buf);
 		kv_joint = stoi(redis_buf);
 
-		//------ Compute controller torques
-		command_torques.setZero();
-	
-		//------ Send torques
-		redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
+		/* Set Fields */
+		robot->position(current_task_pos, "link6", pos_in_frame);
+		robot->linearVelocity(current_task_vel, "link6", pos_in_frame);
+		robot->angularVelocity(current_angl_vel, "link6");
+		robot->taskInertiaMatrixWithPseudoInv(lambda_small, jv);
+		robot->rotation(rotation_current, "link6");
+		robot->Jv(jv, "link6", pos_in_frame);
+		robot->Jw(jw, "link6");
+		robot->nullspaceMatrix(N, jv);
+		robot->gravityVector(g);
 
+		/* Logging */
+		for(int i = 0; i < 3; i++) {cout << current_task_pos(i) << ", ";}
+		for(int i = 0; i < 3; i++) {cout << desired_task_pos(i) << ", ";}
+		for(int i = 0; i < 7; i++) {cout << robot->_q(i) << ", ";}
+		for(int i = 0; i < 3; i++) {cout << orient_error(i) << ", ";}
+		for(int i = 0; i < 2; i++) {cout << current_task_vel(i) << ", ";}
+		cout << current_task_vel(2) << endl;
+
+		/* Controllers */
+		diff_position = kp_pos * (desired_task_pos - current_task_pos) - kv_pos * current_task_vel;
+		diff_joint = kp_joint * (desired_joint_pos - robot->_q) - kv_joint * robot->_dq;
+		diff_joint2 = -kv_joint * robot->_dq;
+
+		/* Command Torques */
+		if(option == 1) {
+		  command_torques = jv.transpose() * (lambda_small * diff_position) + N.transpose() * robot->_M * diff_joint2 + g;
+		} else if(option == 2) {
+		  cerr << rotation_current << endl;
+		  orient_error << 0, 0, 0;
+		  for(int i = 0; i < 3; i++) {
+		    rotation_vec1 << rotation_current(0, i), rotation_current(1, i), rotation_current(2, i);
+		    rotation_vec2 << rotation_desired(0, i), rotation_desired(1, i), rotation_desired(2, i);
+		    orient_error = orient_error + rotation_vec1.cross(rotation_vec2);
+		  }
+		  j << jv, jw; orient_error = -orient_error/2;
+		  robot->taskInertiaMatrixWithPseudoInv(lambda_big, j);
+		  diff_rotation << diff_position, (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);
+		  command_torques = j.transpose() * lambda_big * diff_rotation + N.transpose() * robot->_M * diff_joint2 + g;
+		} else if(option == 3) {
+		  desired_task_vel = (kp_pos/kv_pos) * (desired_task_pos - current_task_pos);
+		  if(0.05/(desired_task_vel.norm()) > 1) {
+		    s = 1;
+		  } else {
+		    s = 0.05/(desired_task_vel.norm());
+		  }
+		  diff_pos2 = - kv_pos * (current_task_vel - s*desired_task_vel);
+		  command_torques = jv.transpose() * (lambda_small * diff_pos2) + N.transpose() * robot->_M * diff_joint2 + g;
+		}		
+	
+		/* Send Torques */
+		redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
 		controller_counter++;
 	}
 
