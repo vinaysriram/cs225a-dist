@@ -4,7 +4,7 @@
 
 	<robot name="sawyer">
 		<!-- model node is required -->
-		<model dir="resources/basicTest" path="sawyer.urdf" name="sawyer" />
+		<model dir="resources/project_controller" path="sawyer.urdf" name="sawyer" />
 		<!-- origin node is optional -->
 		<origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
 	</robot>

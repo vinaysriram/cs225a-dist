@@ -66,7 +66,7 @@ if [ -f "demo_project" ]; then
     cd ../..
 fi
 if [ -f "project_controller" ]; then
-    cd resources/basicTest
+    cd resources/project_controller
     if [ ! -e "sawyer_graphics" ]; then
 	ln -s ../../../resources/sawyer_graphics .
     fi

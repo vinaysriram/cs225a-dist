@@ -1,5 +1,8 @@
 # create an executable
-ADD_EXECUTABLE (project_controller project_controller.cpp)
+ADD_EXECUTABLE (project_controller
+	${CS225A_COMMON_SOURCE}
+	project_controller.cpp
+)
 
 # and link the library against the executable
 TARGET_LINK_LIBRARIES (project_controller
