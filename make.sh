@@ -20,24 +20,29 @@ cd ..
 mkdir -p resources
 cd resources
 if [ ! -d "puma_graphics" ]; then
-	curl -L http://cs.stanford.edu/groups/manips/teaching/cs225a/resources/puma_graphics.zip -o puma_graphics.zip
-	unzip puma_graphics.zip
-	rm puma_graphics.zip
+    curl -L http://cs.stanford.edu/groups/manips/teaching/cs225a/resources/puma_graphics.zip -o puma_graphics.zip
+    unzip puma_graphics.zip
+    rm puma_graphics.zip
 fi
 if [ ! -d "kuka_iiwa_graphics" ]; then
-	curl -L http://cs.stanford.edu/groups/manips/teaching/cs225a/resources/kuka_iiwa_graphics.zip -o kuka_iiwa_graphics.zip
-	unzip kuka_iiwa_graphics.zip
-	rm kuka_iiwa_graphics.zip
+    curl -L http://cs.stanford.edu/groups/manips/teaching/cs225a/resources/kuka_iiwa_graphics.zip -o kuka_iiwa_graphics.zip
+    unzip kuka_iiwa_graphics.zip
+    rm kuka_iiwa_graphics.zip
+fi
+if [ ! -d "sawyer_graphics" ]; then
+    curl -L http://cs.stanford.edu/groups/manips/teaching/cs225a/resources/sawyer_graphics.zip -o sawyer_graphics.zip
+    unzip sawyer_graphics.zip
+    rm sawyer_graphics.zip
 fi
 cd ..
 
 cd bin
 if [ -f "hw1" ]; then
-	cd resources/hw1
-	if [ ! -e "puma_graphics" ]; then
-		ln -s ../../../resources/puma_graphics .
-	fi
-	cd ../..
+    cd resources/hw1
+    if [ ! -e "puma_graphics" ]; then
+	ln -s ../../../resources/puma_graphics .
+    fi
+    cd ../..
 fi
 if [ -f "hw2" ]; then
 	cd resources/hw2
@@ -47,18 +52,25 @@ if [ -f "hw2" ]; then
 	cd ../..
 fi
 if [ -f "hw3" ]; then
-	cd resources/hw3
-	if [ ! -e "kuka_iiwa_graphics" ]; then
-		ln -s ../../../resources/kuka_iiwa_graphics .
-	fi
-	cd ../..
+    cd resources/hw3
+    if [ ! -e "kuka_iiwa_graphics" ]; then
+	ln -s ../../../resources/kuka_iiwa_graphics .
+    fi
+    cd ../..
 fi
 if [ -f "demo_project" ]; then
-	cd resources/demo_project
-	if [ ! -e "kuka_iiwa_graphics" ]; then
-		ln -s ../../../resources/kuka_iiwa_graphics .
-	fi
-	cd ../..
+    cd resources/demo_project
+    if [ ! -e "kuka_iiwa_graphics" ]; then
+	ln -s ../../../resources/kuka_iiwa_graphics .
+    fi
+    cd ../..
+fi
+if [ -f "project_controller" ]; then
+    cd resources/basicTest
+    if [ ! -e "sawyer_graphics" ]; then
+	ln -s ../../../resources/sawyer_graphics .
+    fi
+    cd ../..
 fi
 cd ..
 
@@ -75,6 +87,22 @@ make -j4
 cd ../bin
 EOF
 chmod +x make.sh
+
+# Project Controller Script
+if [ -f 'project_controller' ]; then
+    cat <<EOF > init_controller.sh
+redis-cli flushall
+redis-cli set cs225a::robot::sawyer::tasks::kp_pos 300
+redis-cli set cs225a::robot::sawyer::tasks::kv_pos 40
+redis-cli set cs225a::robot::sawyer::tasks::kp_ori 300
+redis-cli set cs225a::robot::sawyer::tasks::kv_ori 30
+redis-cli set cs225a::robot::sawyer::tasks::kp_joint 0
+redis-cli set cs225a::robot::sawyer::tasks::kv_joint 30
+redis-cli set cs225a::robot::sawyer::tasks::ee_pos_des "0.5 0.0 0.8"
+redis-cli set cs225a::robot::sawyer::tasks::target_pos "0.5 0.0 1.0"
+./run_controller.sh project_controller resources/project_controller/world.urdf resources/project_controller/sawyer.urdf sawyer
+EOF
+fi
 
 # Run hw0 script
 if [ -f "hw0" ]; then
@@ -101,7 +129,7 @@ EOM
 else
 	trap 'kill %1; kill %2' SIGINT
 	trap 'kill %1; kill %2' EXIT
-	./simulator \$2 \$3 \$4 > simulator.log & ./visualizer \$2 \$3 \$4 > visualizer.log & ./"\$@"
+	./simulator \$2 \$3 \$4 > simulator.log & ./visualizer_project \$2 \$3 \$4 > visualizer.log & ./"\$@"
 	# ./visualizer \$2 \$3 \$4 & ./simulator \$2 \$3 \$4 & ./"\$@"
 fi
 EOF
