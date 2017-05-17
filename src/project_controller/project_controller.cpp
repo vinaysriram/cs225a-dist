@@ -1,14 +1,16 @@
 #include <model/ModelInterface.h>
 #include "redis/RedisClient.h"
 #include "timer/LoopTimer.h"
+#include <Eigen/Dense>
 
 #include <cmath>
+#include <cfloat>
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <string>
-
 #include <signal.h>
+
 static volatile bool runloop = true;
 void stop(int) { runloop = false; }
 
@@ -32,16 +34,36 @@ static std::string KP_JOINT_KEY = "";
 static std::string KV_JOINT_KEY = "";
 static std::string KP_JOINT_INIT_KEY = "";
 static std::string KV_JOINT_INIT_KEY = "";
+static std::string DESIRED_JOINT_POS = "";
 static std::string DESIRED_POS_KEY_OP = "";
 static std::string TARGET_POS_KEY_OP = "";
 static std::string CURRENT_POS_KEY_OP = "";
 
-// Function to parse command line arguments
-void parseCommandline(int argc, char** argv);
+bool nanCheck(Eigen::MatrixXd a)
+{
+  for(int i = 0; i < a.rows(); i++) {
+    for(int j = 0; j < a.cols(); j++) {
+      if(isnan(a(i,j))) {
+	return true;
+      }
+    }
+  }
+  return false;
+}
 
-int main(int argc, char** argv) {
-  
-  // Parse command line and set redis keys
+void parseCommandline(int argc, char** argv)
+{
+  if (argc != 4) {
+    cout << "Usage: project_controller <path-to-world.urdf> <path-to-robot.urdf> <robot-name>" << endl;
+    exit(0);
+  }
+  world_file = string(argv[1]);
+  robot_file = string(argv[2]);
+  robot_name = string(argv[3]);
+}
+
+int main(int argc, char** argv)
+{  
   parseCommandline(argc, argv);
   JOINT_TORQUES_COMMANDED_KEY = "cs225a::robot::" + robot_name + "::actuators::fgc";
   JOINT_ANGLES_KEY            = "cs225a::robot::" + robot_name + "::sensors::q";
@@ -55,6 +77,7 @@ int main(int argc, char** argv) {
   KV_JOINT_KEY                = "cs225a::robot::" + robot_name + "::tasks::kv_joint";
   KP_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kp_joint_init";
   KV_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kv_joint_init";
+  DESIRED_JOINT_POS           = "cs225a::robot::" + robot_name + "::tasks::jt_pos_des";
   DESIRED_POS_KEY_OP          = "cs225a::robot::" + robot_name + "::tasks::ee_pos_des";
   TARGET_POS_KEY_OP           = "cs225a::robot::" + robot_name + "::tasks::target_pos";
   CURRENT_POS_KEY_OP          = "cs225a::robot::" + robot_name + "::tasks::ee_pos";
@@ -63,7 +86,6 @@ int main(int argc, char** argv) {
   cout << JOINT_ANGLES_KEY << endl;
   cout << JOINT_VELOCITIES_KEY << endl;
   
-  // Start redis client
   // Make sure redis-server is running at localhost with default port 6379
   HiredisServerInfo info;
   info.hostname_ = "127.0.0.1";
@@ -84,36 +106,21 @@ int main(int argc, char** argv) {
   timer.setCtrlCHandler(stop);    // exit while loop on ctrl-c
   timer.initializeTimer(1e6); // 1 ms pause before starting loop
 
-  /**
-   * JOINT SPACE CONTROL
-   * -------------------
-   * Controller to initialize robot to desired joint position.
-   * Uses kp = 400 and kv = 40 by default.
-   */
+  /*******************************
+   ***** JOINT SPACE CONTROL *****
+   *******************************/
   
-  // Set gains in Redis if not initialized
-  string redis_buf;
-  double kp_joint_init = 30, kv_joint_init = 10;
-  if (!redis_client.getCommandIs(KP_JOINT_INIT_KEY)) {
-    redis_buf = to_string(kp_joint_init);
-    redis_client.setCommandIs(KP_JOINT_INIT_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KV_JOINT_INIT_KEY)) {
-    redis_buf = to_string(kv_joint_init);
-    redis_client.setCommandIs(KV_JOINT_INIT_KEY, redis_buf);
-  }
-  
-  // Initialize controller variables
+  string redis_buf; double kp_joint_init, kv_joint_init;
   Eigen::VectorXd command_torques = Eigen::VectorXd::Zero(dof);
-  Eigen::VectorXd q_err(dof), g(dof);
+  Eigen::VectorXd q_err(dof), g(dof), q_initial(dof);
   
-  Eigen::VectorXd q_initial = Eigen::VectorXd::Zero(dof); // Desired initial joint position
-  Eigen::Vector3d x_initial; // Resulting end effector position from initialization
+  Eigen::Vector3d x_initial;
   const double TOLERANCE_Q_INIT = 0.1;
   const double TOLERANCE_DQ_INIT = 0.1;
   
-  // While window is open:
-  cout << "Joint space controller: initializing joint position..." << endl;
+  redis_client.getEigenMatrixDerivedString(DESIRED_JOINT_POS, q_initial);
+  cout << "Joint Space Controller: Initializing to Home Position." << endl;
+  
   while (runloop) {
     // wait for next scheduled loop (controller must run at precise rate)
     timer.waitForNextLoop();
@@ -146,42 +153,14 @@ int main(int argc, char** argv) {
     redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
     controller_counter++;
   }
-  cout << "Joint position initialized. Switching to operational space controller." << endl;
   
-  /**
-   * OPERATIONAL SPACE CONTROL
-   * -------------------------
-   */
+  /*************************************
+   ***** OPERATIONAL SPACE CONTROL *****
+   *************************************/
   
-  // Set gains in Redis if not initialized
-  double kp_pos   = 0, kv_pos   = 0;
-  double kp_ori   = 0, kv_ori   = 0;
-  double kp_joint = 0, kv_joint = 0;
-
-  if (!redis_client.getCommandIs(KP_POSITION_KEY)) {
-    redis_buf = to_string(kp_pos);
-    redis_client.setCommandIs(KP_POSITION_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KV_POSITION_KEY)) {
-    redis_buf = to_string(kv_pos);
-    redis_client.setCommandIs(KV_POSITION_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KP_ORIENTATION_KEY)) {
-    redis_buf = to_string(kp_ori);
-    redis_client.setCommandIs(KP_ORIENTATION_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KV_ORIENTATION_KEY)) {
-    redis_buf = to_string(kv_ori);
-    redis_client.setCommandIs(KV_ORIENTATION_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KP_JOINT_KEY)) {
-    redis_buf = to_string(kp_joint);
-    redis_client.setCommandIs(KP_JOINT_KEY, redis_buf);
-  }
-  if (!redis_client.getCommandIs(KV_JOINT_KEY)) {
-    redis_buf = to_string(kv_joint);
-    redis_client.setCommandIs(KV_JOINT_KEY, redis_buf);
-  }
+  double kp_pos, kv_pos;
+  double kp_ori, kv_ori;
+  double kp_joint, kv_joint;
   
   // Initialize controller variables
   Eigen::MatrixXd lambda(6, 6);
@@ -207,8 +186,11 @@ int main(int argc, char** argv) {
   Eigen::VectorXd diff_rotation(3);
   Eigen::VectorXd diff_position(3);
   Eigen::VectorXd diff_joint(dof);
-
-  redis_client.getEigenMatrixDerivedString(DESIRED_POS_KEY_OP, desired_task_pos);
+  
+  desired_task_pos = x_initial; target_pos = x_initial; target_pos(2) = target_pos(2) - 0.5;  
+  redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
+  redis_client.setEigenMatrixDerivedString(DESIRED_POS_KEY_OP, desired_task_pos);
+  cout << "Joint position initialized. Switching to operational space controller." << endl;
   
   // While window is open:
   while (runloop) {
@@ -224,14 +206,24 @@ int main(int argc, char** argv) {
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
-    z_hat = target_pos - desired_task_pos;
-    z_hat.normalize();
-    x_hat << 1, 1, -(z_hat(0)+z_hat(1))/z_hat(2);
-    x_hat.normalize();
+
+    z_hat = target_pos - desired_task_pos; z_hat.normalize();
+    x_hat << 0, -z_hat(2), z_hat(1); x_hat.normalize();
     y_hat = z_hat.cross(x_hat);
+
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
-    rotation_desired.col(2) = z_hat;    
+    rotation_desired.col(2) = z_hat;
+
+    if(nanCheck(rotation_desired)) {
+      cout << "ROT IS NAN!" << endl;
+    }
+    if(nanCheck(robot->_q)) {
+      cout << "Q is NAN!" << endl;
+    }
+    if(nanCheck(robot->_dq)) {
+      cout << "DQ is NAN!" << endl;
+    }
     
     // Update the model
     robot->updateModel();
@@ -282,15 +274,4 @@ int main(int argc, char** argv) {
   command_torques.setZero();
   redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
   return 0;
-}
-
-void parseCommandline(int argc, char** argv)
-{
-  if (argc != 4) {
-    cout << "Usage: project_controller <path-to-world.urdf> <path-to-robot.urdf> <robot-name>" << endl;
-    exit(0);
-  }
-  world_file = string(argv[1]);
-  robot_file = string(argv[2]);
-  robot_name = string(argv[3]);
 }
