@@ -39,18 +39,6 @@ static std::string DESIRED_POS_KEY_OP = "";
 static std::string TARGET_POS_KEY_OP = "";
 static std::string CURRENT_POS_KEY_OP = "";
 
-bool nanCheck(Eigen::MatrixXd a)
-{
-  for(int i = 0; i < a.rows(); i++) {
-    for(int j = 0; j < a.cols(); j++) {
-      if(isnan(a(i,j))) {
-	return true;
-      }
-    }
-  }
-  return false;
-}
-
 void parseCommandline(int argc, char** argv)
 {
   if (argc != 4) {
@@ -214,16 +202,6 @@ int main(int argc, char** argv)
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
     rotation_desired.col(2) = z_hat;
-
-    if(nanCheck(rotation_desired)) {
-      cout << "ROT IS NAN!" << endl;
-    }
-    if(nanCheck(robot->_q)) {
-      cout << "Q is NAN!" << endl;
-    }
-    if(nanCheck(robot->_dq)) {
-      cout << "DQ is NAN!" << endl;
-    }
     
     // Update the model
     robot->updateModel();

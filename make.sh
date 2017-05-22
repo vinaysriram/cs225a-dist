@@ -1,14 +1,5 @@
 set -e
 
-# Update sai2-common
-cd sai2-common
-git pull origin master
-mkdir -p build_rel
-cd build_rel
-cmake ..
-make -j4
-cd ../..
-
 # Build cs225a
 mkdir -p build
 cd build

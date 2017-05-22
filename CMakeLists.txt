@@ -18,11 +18,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 # set common dependencies
 
 # - eigen3
-set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
-if(NOT EIGEN3_INCLUDE_DIR)
-	find_package(Eigen3 REQUIRED)
-endif()
-include_directories(${EIGEN3_INCLUDE_DIR})
+include_directories(/usr/include/Eigen)
 
 # - CHAI3D
 find_package(CHAI3D REQUIRED)
