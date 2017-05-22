@@ -29,6 +29,8 @@ from intera_interface import CHECK_VERSION
 
 def map_keyboard(side, redisInstance):
 
+	min_q = [-3.0503, -3.8095, -3.0426, -3.0439, -2.9761, -2.9761, -4.7124]
+	max_q = [3.0503, 2.2736, 3.0426, 3.0439, 2.9761, 2.9761, 4.7124]
 	home_q = [-0.11243359375, -1.15601367188, -0.00805859375, 2.16251171875, 0.0014658203125, 0.47171875, 3.31875488281]
 	float_q = home_q
 	limb = intera_interface.Limb(side)
@@ -50,7 +52,7 @@ def map_keyboard(side, redisInstance):
 			if len(q) is 7: # Check if 7 forces read
 				for i in range(0, 7):
 					angle_float = float(q[i])
-					if math.isnan(angle_float): 
+					if math.isnan(angle_float) or angle_float < min_q[i] or angle_float > max_q[i]: 
 						flag = True
 					else:
 						float_q[i] = angle_float
