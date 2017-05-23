@@ -12,13 +12,22 @@ include_directories(/usr/include /usr/local/include)
 set (CS225A_COMMON_SOURCE
 	${PROJECT_SOURCE_DIR}/src/redis/RedisClient.cpp
 	${PROJECT_SOURCE_DIR}/src/timer/LoopTimer.cpp
+	${PROJECT_SOURCE_DIR}/src/optitrack/OptiTrackClient.cpp
 )
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
 # set common dependencies
 
 # - eigen3
-include_directories(/usr/include/Eigen)
+set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
+if(NOT EIGEN3_INCLUDE_DIR)
+	find_package(Eigen3 QUIET)
+	# TODO: Find automatic way to find for Ubuntu 14.04
+	if(NOT EIGEN3_INCLUDE_DIR)
+		set(EIGEN3_INCLUDE_DIR /usr/include/eigen3)
+	endif()
+endif()
+include_directories(${EIGEN3_INCLUDE_DIR})
 
 # - CHAI3D
 find_package(CHAI3D REQUIRED)
@@ -60,6 +69,12 @@ elseif (CMAKE_SYSTEM_NAME MATCHES Linux)
 endif ()
 
 
+# - natnetlinux
+find_package(Boost REQUIRED COMPONENTS system thread)
+include_directories(${Boost_INCLUDE_DIRS})
+link_libraries(${Boost_LIBRARIES})
+include_directories(${PROJECT_SOURCE_DIR}/external/NatNetLinux.git/include)
+
 set(CS225A_COMMON_LIBRARIES
 	${CHAI3D_LIBARIES}
 	${SAI2-COMMON_LIBRARIES}
@@ -76,12 +91,13 @@ set (CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${PROJECT_SOURCE_DIR}/bin)
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/bin)
 set (CS225A_BINARY_DIR ${PROJECT_SOURCE_DIR}/bin)
 
+# add_subdirectory(src/optitrack)
 add_subdirectory(src/visualization)
-add_subdirectory(src/visualization_project)
 add_subdirectory(src/simulation)
 add_subdirectory(src/hw0)
 add_subdirectory(src/hw1)
 add_subdirectory(src/hw2)
 add_subdirectory(src/hw3)
-add_subdirectory(src/project_controller)
 add_subdirectory(src/demo_project)
+add_subdirectory(src/project_controller)
+add_subdirectory(src/visualization_project)
