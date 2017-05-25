@@ -1,4 +1,5 @@
 #include <model/ModelInterface.h>
+#include "optitrack/OptiTrackClient.h"
 #include "redis/RedisClient.h"
 #include "timer/LoopTimer.h"
 #include <Eigen/Dense>
@@ -73,7 +74,7 @@ int main(int argc, char** argv)
   cout << "Loading URDF world model file: " << world_file << endl;
   cout << JOINT_ANGLES_KEY << endl;
   cout << JOINT_VELOCITIES_KEY << endl;
-  
+
   // Make sure redis-server is running at localhost with default port 6379
   HiredisServerInfo info;
   info.hostname_ = "127.0.0.1";
@@ -193,12 +194,10 @@ int main(int argc, char** argv)
     // Read from Redis current sensor values
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
-    redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
-
+    redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
     z_hat = target_pos - desired_task_pos; z_hat.normalize();
     x_hat << 0, -z_hat(2), z_hat(1); x_hat.normalize();
     y_hat = z_hat.cross(x_hat);
-
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
     rotation_desired.col(2) = z_hat;
