@@ -37,7 +37,7 @@ def map_keyboard(side, redisInstance):
 	joints = limb.joint_names()
 
 	def set_j(limb, joints, q):
-		joint_command = {joints[0]: q[0], joints[1]: q[1], joints[2]: q[2], joints[3]: q[3], joints[4]: q[4], joints[5]: q[5], joints[6]: q[6]}
+		joint_command = {joints[0]: q[0], joints[1]: q[1], joints[2]: q[2], joints[3]: q[3], joints[4]: q[4], joints[5]: q[5], joints[6]: 1.742}
 		limb.set_joint_positions(joint_command)
 
 	done = False

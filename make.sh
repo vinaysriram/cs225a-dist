@@ -91,7 +91,7 @@ redis-cli set cs225a::robot::sawyer::tasks::kp_joint 0
 redis-cli set cs225a::robot::sawyer::tasks::kv_joint 30
 redis-cli set cs225a::robot::sawyer::tasks::kp_joint_init 30
 redis-cli set cs225a::robot::sawyer::tasks::kv_joint_init 10
-redis-cli set cs225a::robot::sawyer::tasks::jt_pos_des "-0.001125 -1.1782490234375 -0.002130859375 2.17892578125 0.00065234375 0.568098632812 3.313166015625"
+redis-cli set cs225a::robot::sawyer::tasks::jt_pos_des "-0.001125 -1.1782490234375 -0.002130859375 2.17892578125 0.00065234375 0.568098632812 0.17157336203"
 ./run_controller.sh project_controller resources/project_controller/world.urdf resources/project_controller/sawyer.urdf sawyer
 EOF
 fi

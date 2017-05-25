@@ -42,7 +42,7 @@ static const HiredisServerInfo kRedisServerInfo = {
 };
 
 static string TARGET_POSITION_KEY     = "::tasks::target_pos";
-static string EE_POSITION_DESIRED_KEY = "::tasks::ee_pos_des";
+static string EE_POSITION_DESIRED_KEY = "::tasks::ee_pos";
 
 int main(int argc, char** argv)
 {

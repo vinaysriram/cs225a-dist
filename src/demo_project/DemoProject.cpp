@@ -45,6 +45,7 @@ void run(bool dataCollection)
   optitrack_ = make_unique<OptiTrackClient>();
   optitrack_->openConnection("172.24.69.66");
   
+  Eigen::Matrix3d rot;
   Eigen::VectorXd aug(4); Eigen::Vector3d fin; Eigen::MatrixXd T(4, 4);
   T(0, 0) = 0.9996; T(0, 1) = 0.0261; T(0, 2) = -0.0141; T(0, 3) = 1.5104;
   T(1, 0) = -0.0135; T(1, 1) = -0.0238; T(1, 2) = -0.9996; T(1, 3) = -0.5664;
@@ -57,14 +58,18 @@ void run(bool dataCollection)
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       if (!optitrack_->getFrame()) continue;
       for (auto& pos : optitrack_->pos_rigid_bodies_) {
-	cout << pos(0) << ", " << pos(1) << ", "  << pos(2) << ", ";
+	aug << pos(0), pos(1), pos(2), 1;
       }
+      aug = T * aug;
+      fin << aug(0), aug(1), aug(2);
       redis_client_.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
       redis_client_.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
       robot->updateModel();
       robot->position(posn, "right_l6", op_pos_task_pos_in_link);
-      cout << posn(0) << ", " << posn(1) << ", " << posn(2) << endl;
-      usleep(10000000);    
+      robot->rotation(rot, "right_l6");
+      fin = rot.transpose() * (fin - posn); 
+      cout << fin(0) << ", " << fin(1) << ", " << fin(2) << endl;
+      usleep(5000000);
     }
   } else {
     cout << "Optitrack Runner" << endl;

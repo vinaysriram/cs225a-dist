@@ -152,7 +152,7 @@ int main(int argc, char** argv)
   double kp_joint, kv_joint;
   
   // Initialize controller variables
-  Eigen::MatrixXd lambda(6, 6);
+  Eigen::MatrixXd lambda(3, 3);
   Eigen::MatrixXd jv(3, dof);
   Eigen::MatrixXd jw(3, dof);
   Eigen::MatrixXd j(6, dof);
@@ -166,6 +166,7 @@ int main(int argc, char** argv)
   Eigen::Vector3d current_angl_vel;
   
   Eigen::Matrix3d rotation_current;
+  Eigen::Matrix3d rotation_prior;
   Eigen::Matrix3d rotation_desired;
   Eigen::Vector3d rotation_vec1;
   Eigen::Vector3d rotation_vec2;
@@ -176,11 +177,15 @@ int main(int argc, char** argv)
   Eigen::VectorXd diff_position(3);
   Eigen::VectorXd diff_joint(dof);
   
-  desired_task_pos = x_initial; target_pos = x_initial; target_pos(2) = target_pos(2) - 0.5;  
+  Eigen::Vector3d offset_init;
+  Eigen::Vector3d barrel_tip_pos;
+  Eigen::Vector3d measurementVector;
+  measurementVector << -0.0882647, -0.159753, -0.0384656;
+  target_pos = desired_task_pos; target_pos(0) = target_pos(0) + 0.5;  
   redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
   redis_client.setEigenMatrixDerivedString(DESIRED_POS_KEY_OP, desired_task_pos);
   cout << "Joint position initialized. Switching to operational space controller." << endl;
-  
+
   // While window is open:
   while (runloop) {
     
@@ -191,13 +196,14 @@ int main(int argc, char** argv)
     redis_client.getCommandIs(TIMESTAMP_KEY, redis_buf);
     double t_curr = stod(redis_buf);
     
-    // Read from Redis current sensor values
+    // Read from Redis current sensor value
+    robot->position(barrel_tip_pos, "right_l6", measurementVector); 
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
-    z_hat = target_pos - desired_task_pos; z_hat.normalize();
-    x_hat << 0, -z_hat(2), z_hat(1); x_hat.normalize();
-    y_hat = z_hat.cross(x_hat);
+    x_hat = barrel_tip_pos - target_pos; x_hat.normalize();
+    y_hat << 0, -x_hat(2), x_hat(1); y_hat.normalize();
+    z_hat = x_hat.cross(y_hat);
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
     rotation_desired.col(2) = z_hat;
@@ -220,17 +226,17 @@ int main(int argc, char** argv)
     kv_joint = stoi(redis_buf);
     
     /* Set Fields */
-    robot->position(current_task_pos, "right_l6", Eigen::Vector3d::Zero());
-    robot->linearVelocity(current_task_vel, "right_l6", Eigen::Vector3d::Zero());
-    robot->angularVelocity(current_angl_vel, "right_l6");
-    robot->rotation(rotation_current, "right_l6");
-    robot->Jv(jv, "right_l6", Eigen::Vector3d::Zero());
-    robot->Jw(jw, "right_l6");
-    robot->nullspaceMatrix(N, jv);
+    robot->position(current_task_pos, "right_l5", Eigen::Vector3d::Zero());
+    robot->linearVelocity(current_task_vel, "right_l5", Eigen::Vector3d::Zero());
+    robot->angularVelocity(current_angl_vel, "right_l5");
+    robot->rotation(rotation_current, "right_l5");
+    robot->Jv(jv, "right_l5", Eigen::Vector3d::Zero());
+    robot->Jw(jw, "right_l5");
+    robot->nullspaceMatrix(N, jw);
     robot->gravityVector(g);
     
     diff_position = kp_pos * (desired_task_pos - current_task_pos) - kv_pos * current_task_vel;
-    diff_joint = -kv_joint * robot->_dq;
+    diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;
     orient_error << 0, 0, 0;
     for(int i = 0; i < 3; i++) {
       rotation_vec1 << rotation_current(0, i), rotation_current(1, i), rotation_current(2, i);
@@ -239,10 +245,10 @@ int main(int argc, char** argv)
     }
     
     j << jv, jw; orient_error = -orient_error/2;
-    robot->taskInertiaMatrixWithPseudoInv(lambda, j);
+    robot->taskInertiaMatrixWithPseudoInv(lambda, jw);
     diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);
     diff_combined << diff_position, diff_rotation;
-    command_torques = j.transpose() * lambda * diff_combined + N.transpose() * robot->_M * diff_joint + g;
+    command_torques = jw.transpose() * lambda * diff_rotation + N.transpose() * robot->_M * diff_joint + g;
     redis_client.setEigenMatrixDerivedString(CURRENT_POS_KEY_OP, current_task_pos);
     redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
     controller_counter++;
