@@ -231,6 +231,7 @@ static void keySelect(GLFWwindow* window, int key, int scancode, int action, int
   case GLFW_KEY_D: x_target(1) = x_target(1) - 0.005; break;
   case GLFW_KEY_Q: x_target(0) = x_target(0) + 0.005; break;
   case GLFW_KEY_E: x_target(0) = x_target(0) - 0.005; break;
+  case GLFW_KEY_F: redis_client.set("servo_key", "1"); break;
   default: break;
   }
   redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY, x_target);
