@@ -38,7 +38,14 @@ static std::string KV_JOINT_INIT_KEY = "";
 static std::string DESIRED_JOINT_POS = "";
 static std::string DESIRED_POS_KEY_OP = "";
 static std::string TARGET_POS_KEY_OP = "";
-static std::string CURRENT_POS_KEY_OP = "";
+static std::string J5_POS_KEY_OP = "";
+static std::string J6_POS_KEY_OP = "";
+static std::string ROT_5_X = "";
+static std::string ROT_5_Y = "";
+static std::string ROT_5_Z = "";
+static std::string ROT_6_X = "";
+static std::string ROT_6_Y = "";
+static std::string ROT_6_Z = "";
 
 void parseCommandline(int argc, char** argv)
 {
@@ -67,10 +74,16 @@ int main(int argc, char** argv)
   KP_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kp_joint_init";
   KV_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kv_joint_init";
   DESIRED_JOINT_POS           = "cs225a::robot::" + robot_name + "::tasks::jt_pos_des";
-  DESIRED_POS_KEY_OP          = "cs225a::robot::" + robot_name + "::tasks::ee_pos_des";
-  TARGET_POS_KEY_OP           = "cs225a::robot::" + robot_name + "::tasks::target_pos";
-  CURRENT_POS_KEY_OP          = "cs225a::robot::" + robot_name + "::tasks::ee_pos";
-  
+  TARGET_POS_KEY_OP           = "cs225a::robot::" + robot_name + "::tasks::tg_pos";
+  J5_POS_KEY_OP               = "cs225a::robot::" + robot_name + "::tasks::j5_pos";
+  J6_POS_KEY_OP               = "cs225a::robot::" + robot_name + "::tasks::j6_pos";   
+  ROT_5_X                     = "cs225a::robot::" + robot_name + "::tasks::rot_5x";
+  ROT_5_Y                     = "cs225a::robot::" + robot_name + "::tasks::rot_5y";
+  ROT_5_Z                     = "cs225a::robot::" + robot_name + "::tasks::rot_5z";
+  ROT_6_X                     = "cs225a::robot::" + robot_name + "::tasks::rot_6x";
+  ROT_6_Y                     = "cs225a::robot::" + robot_name + "::tasks::rot_6y";
+  ROT_6_Z                     = "cs225a::robot::" + robot_name + "::tasks::rot_6z";
+
   cout << "Loading URDF world model file: " << world_file << endl;
   cout << JOINT_ANGLES_KEY << endl;
   cout << JOINT_VELOCITIES_KEY << endl;
@@ -153,39 +166,36 @@ int main(int argc, char** argv)
   
   // Initialize controller variables
   Eigen::MatrixXd lambda(3, 3);
-  Eigen::MatrixXd jv(3, dof);
   Eigen::MatrixXd jw(3, dof);
-  Eigen::MatrixXd j(6, dof);
   Eigen::MatrixXd N(7, 7);
 
   Eigen::Vector3d target_pos;
   Eigen::Vector3d x_hat, y_hat, z_hat;
-  Eigen::Vector3d current_task_vel;
-  Eigen::Vector3d current_task_pos;
-  Eigen::Vector3d desired_task_pos;
+  Eigen::Vector3d current_j6_pos;
+  Eigen::Vector3d current_j5_pos;
   Eigen::Vector3d current_angl_vel;
   
-  Eigen::Matrix3d rotation_current;
-  Eigen::Matrix3d rotation_prior;
+  Eigen::Matrix3d rotation_j5;
+  Eigen::Matrix3d rotation_j6;
   Eigen::Matrix3d rotation_desired;
+
   Eigen::Vector3d rotation_vec1;
   Eigen::Vector3d rotation_vec2;
   Eigen::Vector3d orient_error;
-
-  Eigen::VectorXd diff_combined(6);
+ 
   Eigen::VectorXd diff_rotation(3);
-  Eigen::VectorXd diff_position(3);
   Eigen::VectorXd diff_joint(dof);
   
   Eigen::Vector3d offset_init;
   Eigen::Vector3d barrel_tip_pos;
   Eigen::Vector3d measurementVector;
-  measurementVector << -0.0882647, -0.159753, -0.0384656;
-  target_pos = desired_task_pos; target_pos(0) = target_pos(0) + 0.5;  
+  
+  // measurementVector << -0.0882647, -0.159753, -0.0384656;
+  measurementVector << 0, 0, 0;
+  target_pos = x_initial; target_pos(0) = target_pos(0) + 0.5;  
   redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
-  redis_client.setEigenMatrixDerivedString(DESIRED_POS_KEY_OP, desired_task_pos);
   cout << "Joint position initialized. Switching to operational space controller." << endl;
-
+  
   // While window is open:
   while (runloop) {
     
@@ -197,13 +207,20 @@ int main(int argc, char** argv)
     double t_curr = stod(redis_buf);
     
     // Read from Redis current sensor value
-    robot->position(barrel_tip_pos, "right_l6", measurementVector); 
+    robot->position(barrel_tip_pos, "right_l5", measurementVector); 
+    robot->position(current_j6_pos, "right_l6", Eigen::Vector3d::Zero());
+    robot->position(current_j5_pos, "right_l5", Eigen::Vector3d::Zero());
+    robot->rotation(rotation_j5, "right_l5");
+    robot->rotation(rotation_j6, "right_l6");
+
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
+    
     x_hat = barrel_tip_pos - target_pos; x_hat.normalize();
-    y_hat << 0, -x_hat(2), x_hat(1); y_hat.normalize();
-    z_hat = x_hat.cross(y_hat);
+    z_hat = -rotation_j6.col(0); z_hat.normalize();
+    y_hat = z_hat.cross(x_hat);
+
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
     rotation_desired.col(2) = z_hat;
@@ -226,31 +243,33 @@ int main(int argc, char** argv)
     kv_joint = stoi(redis_buf);
     
     /* Set Fields */
-    robot->position(current_task_pos, "right_l5", Eigen::Vector3d::Zero());
-    robot->linearVelocity(current_task_vel, "right_l5", Eigen::Vector3d::Zero());
     robot->angularVelocity(current_angl_vel, "right_l5");
-    robot->rotation(rotation_current, "right_l5");
-    robot->Jv(jv, "right_l5", Eigen::Vector3d::Zero());
     robot->Jw(jw, "right_l5");
     robot->nullspaceMatrix(N, jw);
     robot->gravityVector(g);
-    
-    diff_position = kp_pos * (desired_task_pos - current_task_pos) - kv_pos * current_task_vel;
-    diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;
+
     orient_error << 0, 0, 0;
     for(int i = 0; i < 3; i++) {
-      rotation_vec1 << rotation_current(0, i), rotation_current(1, i), rotation_current(2, i);
+      rotation_vec1 << rotation_j5(0, i), rotation_j5(1, i), rotation_j5(2, i);
       rotation_vec2 << rotation_desired(0, i), rotation_desired(1, i), rotation_desired(2, i);
       orient_error = orient_error + rotation_vec1.cross(rotation_vec2);
     }
-    
-    j << jv, jw; orient_error = -orient_error/2;
+    orient_error = -orient_error/2;
     robot->taskInertiaMatrixWithPseudoInv(lambda, jw);
-    diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);
-    diff_combined << diff_position, diff_rotation;
+    
+    diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);    
+    diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;
     command_torques = jw.transpose() * lambda * diff_rotation + N.transpose() * robot->_M * diff_joint + g;
-    redis_client.setEigenMatrixDerivedString(CURRENT_POS_KEY_OP, current_task_pos);
+    
+    redis_client.setEigenMatrixDerivedString(J6_POS_KEY_OP, current_j6_pos);
+    redis_client.setEigenMatrixDerivedString(J5_POS_KEY_OP, current_j5_pos);
     redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
+    redis_client.setEigenMatrixDerivedString(ROT_5_X, rotation_j5.col(0));
+    redis_client.setEigenMatrixDerivedString(ROT_5_Y, rotation_j5.col(1));
+    redis_client.setEigenMatrixDerivedString(ROT_5_Z, rotation_j5.col(2));
+    redis_client.setEigenMatrixDerivedString(ROT_6_X, rotation_j6.col(0));
+    redis_client.setEigenMatrixDerivedString(ROT_6_Y, rotation_j6.col(1));
+    redis_client.setEigenMatrixDerivedString(ROT_6_Z, rotation_j6.col(2));
     controller_counter++;
   }
   

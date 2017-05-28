@@ -14,10 +14,20 @@ using namespace std;
 static string world_file = "";
 static string robot_file = "";
 static string robot_name = "";
-static const string CAMERA_NAME = "camera_fixed";
-static const string REDIS_KEY_PREFIX = "cs225a::robot::";
+
+static const string CAMERA_NAME       = "camera_fixed";
+static const string REDIS_KEY_PREFIX  = "cs225a::robot::";
 static string JOINT_ANGLES_KEY        = "::sensors::q";
 static string JOINT_VELOCITIES_KEY    = "::sensors::dq";
+static string TARGET_POSITION_KEY     = "::tasks::tg_pos";
+static string J5_POSITION_KEY         = "::tasks::j5_pos";
+static string J6_POSITION_KEY         = "::tasks::j6_pos";
+static string ROT_5_X                 = "::tasks::rot_5x";
+static string ROT_5_Y                 = "::tasks::rot_5y";
+static string ROT_5_Z                 = "::tasks::rot_5z";
+static string ROT_6_X                 = "::tasks::rot_6x";
+static string ROT_6_Y                 = "::tasks::rot_6y";
+static string ROT_6_Z                 = "::tasks::rot_6z";
 
 static void parseCommandline(int argc, char** argv);
 static void glfwError(int error, const char* description);
@@ -40,9 +50,6 @@ static const HiredisServerInfo kRedisServerInfo = {
   6379,         // port
   { 1, 500000 } // timeout = 1.5 seconds
 };
-
-static string TARGET_POSITION_KEY     = "::tasks::target_pos";
-static string EE_POSITION_DESIRED_KEY = "::tasks::ee_pos";
 
 int main(int argc, char** argv)
 {
@@ -86,14 +93,28 @@ int main(int argc, char** argv)
   glfwSetScrollCallback(window, mouseScroll);
   
   double last_cursorx, last_cursory;
-  Eigen::Vector3d x, x_des;     
-  auto sphere = new chai3d::cShapeSphere(0.05);
+  Eigen::Vector3d x, j5pos, j6pos, r5x, r5y, r5z, r6x, r6y, r6z;     
+  auto sphere = new chai3d::cShapeSphere(0.07);
   auto segment = new chai3d::cMultiSegment();
+  auto segment5x = new chai3d::cMultiSegment();
+  auto segment5y = new chai3d::cMultiSegment();
+  auto segment5z = new chai3d::cMultiSegment();
+  auto segment6x = new chai3d::cMultiSegment();
+  auto segment6y = new chai3d::cMultiSegment();
+  auto segment6z = new chai3d::cMultiSegment();
   graphics->_world->addChild(segment);
+  graphics->_world->addChild(segment5x);
+  graphics->_world->addChild(segment5y);
+  graphics->_world->addChild(segment5z);
+  graphics->_world->addChild(segment6x);
+  graphics->_world->addChild(segment6y);
+  graphics->_world->addChild(segment6z);
   graphics->_world->addChild(sphere);
-  chai3d::cColorf color;
-  color.setYellowGold();
-  segment->setLineColor(color);
+  chai3d::cColorf color_x, color_y, color_z, color;
+  color.setWhite();
+  color_x.setRed();
+  color_y.setGreen();
+  color_z.setBlue();
   
   // while window is open:
   while (!glfwWindowShouldClose(window)) {
@@ -102,11 +123,45 @@ int main(int argc, char** argv)
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POSITION_KEY, x);
-    redis_client.getEigenMatrixDerivedString(EE_POSITION_DESIRED_KEY, x_des);
-
+    redis_client.getEigenMatrixDerivedString(J5_POSITION_KEY, j5pos);
+    redis_client.getEigenMatrixDerivedString(J6_POSITION_KEY, j6pos);
+    redis_client.getEigenMatrixDerivedString(ROT_5_X, r5x);
+    cout << r5x.transpose() << endl;
+    redis_client.getEigenMatrixDerivedString(ROT_5_Y, r5y);
+    redis_client.getEigenMatrixDerivedString(ROT_5_Z, r5z);
+    redis_client.getEigenMatrixDerivedString(ROT_6_X, r6x);
+    cout << r6x.transpose() << endl;
+    redis_client.getEigenMatrixDerivedString(ROT_6_Y, r6y);
+    redis_client.getEigenMatrixDerivedString(ROT_6_Z, r6z);
+    
     segment->clear();
-    segment->newSegment(chai3d::cVector3d(x), chai3d::cVector3d(x_des));
+    segment->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(x));
     segment->setLineColor(color);
+
+    segment5x->clear();
+    segment5x->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5x/3));
+    segment5x->setLineColor(color_x);
+
+    segment5y->clear();
+    segment5y->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5y/3));
+    segment5y->setLineColor(color_y);
+
+    segment5z->clear();
+    segment5z->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5z/3));
+    segment5z->setLineColor(color_z);
+
+    segment6x->clear();
+    segment6x->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6x/3));
+    segment6x->setLineColor(color_x);
+    
+    segment6y->clear();
+    segment6y->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6y/3));
+    segment6y->setLineColor(color_y);
+    
+    segment6z->clear();
+    segment6z->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6z/3));
+    segment6z->setLineColor(color_z);
+    
     sphere->setLocalPos(chai3d::cVector3d(x));
     
     // update transformations
@@ -203,8 +258,17 @@ void parseCommandline(int argc, char** argv)
 
   JOINT_ANGLES_KEY        = REDIS_KEY_PREFIX + robot_name + JOINT_ANGLES_KEY;
   JOINT_VELOCITIES_KEY    = REDIS_KEY_PREFIX + robot_name + JOINT_VELOCITIES_KEY;  
+  
   TARGET_POSITION_KEY     = REDIS_KEY_PREFIX + robot_name + TARGET_POSITION_KEY;
-  EE_POSITION_DESIRED_KEY = REDIS_KEY_PREFIX + robot_name + EE_POSITION_DESIRED_KEY;
+  J5_POSITION_KEY         = REDIS_KEY_PREFIX + robot_name + J5_POSITION_KEY;
+  J6_POSITION_KEY         = REDIS_KEY_PREFIX + robot_name + J6_POSITION_KEY;
+  
+  ROT_5_X	          = REDIS_KEY_PREFIX + robot_name + ROT_5_X;
+  ROT_5_Y                 = REDIS_KEY_PREFIX + robot_name + ROT_5_Y;
+  ROT_5_Z	          = REDIS_KEY_PREFIX + robot_name + ROT_5_Z;
+  ROT_6_X	          = REDIS_KEY_PREFIX + robot_name + ROT_6_X;
+  ROT_6_Y                 = REDIS_KEY_PREFIX + robot_name + ROT_6_Y;
+  ROT_6_Z                 = REDIS_KEY_PREFIX + robot_name + ROT_6_Z; 
 }
 
 static void glfwError(int error, const char* description) {

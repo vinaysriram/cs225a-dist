@@ -29,7 +29,7 @@ const string robot_file = "resources/demo_project/sawyer.urdf";
 const string robot_name = "sawyer";
 const std::string JOINT_ANGLES_KEY  = "cs225a::robot::sawyer::sensors::q";
 const std::string JOINT_VELOCITIES_KEY = "cs225a::robot::sawyer::sensors::dq";
-const std::string TARGET_POSITION_KEY  = "cs225a::robot::sawyer::tasks::target_pos";
+const std::string TARGET_POSITION_KEY  = "cs225a::robot::sawyer::tasks::tg_pos";
 
 void run(bool dataCollection) 
 {
