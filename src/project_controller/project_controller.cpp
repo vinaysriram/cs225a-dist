@@ -46,6 +46,7 @@ static std::string ROT_5_Z = "";
 static std::string ROT_6_X = "";
 static std::string ROT_6_Y = "";
 static std::string ROT_6_Z = "";
+static std::string BARREL = "";
 
 void parseCommandline(int argc, char** argv)
 {
@@ -83,7 +84,8 @@ int main(int argc, char** argv)
   ROT_6_X                     = "cs225a::robot::" + robot_name + "::tasks::rot_6x";
   ROT_6_Y                     = "cs225a::robot::" + robot_name + "::tasks::rot_6y";
   ROT_6_Z                     = "cs225a::robot::" + robot_name + "::tasks::rot_6z";
-
+  BARREL                      = "cs225a::robot::" + robot_name + "::tasks::barrel";
+  
   cout << "Loading URDF world model file: " << world_file << endl;
   cout << JOINT_ANGLES_KEY << endl;
   cout << JOINT_VELOCITIES_KEY << endl;
@@ -189,9 +191,11 @@ int main(int argc, char** argv)
   Eigen::Vector3d offset_init;
   Eigen::Vector3d barrel_tip_pos;
   Eigen::Vector3d measurementVector;
+  Eigen::Vector3d offsetVector;
   
-  // measurementVector << -0.0882647, -0.159753, -0.0384656;
-  measurementVector << 0, 0, 0;
+  measurementVector << -0.0882647, -0.159753, -0.05;
+  //measurementVector << -0.100, -0.156, -0.05;
+  offsetVector << 0, 0, 0.03;
   target_pos = x_initial; target_pos(0) = target_pos(0) + 0.5;  
   redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
   cout << "Joint position initialized. Switching to operational space controller." << endl;
@@ -207,20 +211,24 @@ int main(int argc, char** argv)
     double t_curr = stod(redis_buf);
     
     // Read from Redis current sensor value
-    robot->position(barrel_tip_pos, "right_l5", measurementVector); 
-    robot->position(current_j6_pos, "right_l6", Eigen::Vector3d::Zero());
+    robot->position(current_j6_pos, "right_l6", offsetVector);
     robot->position(current_j5_pos, "right_l5", Eigen::Vector3d::Zero());
     robot->rotation(rotation_j5, "right_l5");
-    robot->rotation(rotation_j6, "right_l6");
-
+    rotation_j6.col(0) = -rotation_j5.col(2);
+    rotation_j6.col(1) = rotation_j5.col(0);
+    rotation_j6.col(2) = rotation_j6.col(0).cross(rotation_j6.col(1));
+    
+    //barrel_tip_pos = current_j5_pos;
+    barrel_tip_pos = rotation_j6 * measurementVector + current_j6_pos;
+    
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
     
     x_hat = barrel_tip_pos - target_pos; x_hat.normalize();
-    z_hat = -rotation_j6.col(0); z_hat.normalize();
+    z_hat << 0, x_hat(2), -x_hat(1); z_hat.normalize();
     y_hat = z_hat.cross(x_hat);
-
+    
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
     rotation_desired.col(2) = z_hat;
@@ -247,7 +255,9 @@ int main(int argc, char** argv)
     robot->Jw(jw, "right_l5");
     robot->nullspaceMatrix(N, jw);
     robot->gravityVector(g);
-
+    robot->orientationError(orient_error, rotation_desired, rotation_j5);
+    
+    /*
     orient_error << 0, 0, 0;
     for(int i = 0; i < 3; i++) {
       rotation_vec1 << rotation_j5(0, i), rotation_j5(1, i), rotation_j5(2, i);
@@ -255,14 +265,18 @@ int main(int argc, char** argv)
       orient_error = orient_error + rotation_vec1.cross(rotation_vec2);
     }
     orient_error = -orient_error/2;
+    */
+
     robot->taskInertiaMatrixWithPseudoInv(lambda, jw);
-    
+    cout << orient_error.transpose() << endl;
+
     diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);    
     diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;
     command_torques = jw.transpose() * lambda * diff_rotation + N.transpose() * robot->_M * diff_joint + g;
     
     redis_client.setEigenMatrixDerivedString(J6_POS_KEY_OP, current_j6_pos);
     redis_client.setEigenMatrixDerivedString(J5_POS_KEY_OP, current_j5_pos);
+    redis_client.setEigenMatrixDerivedString(BARREL, barrel_tip_pos);
     redis_client.setEigenMatrixDerivedString(JOINT_TORQUES_COMMANDED_KEY, command_torques);
     redis_client.setEigenMatrixDerivedString(ROT_5_X, rotation_j5.col(0));
     redis_client.setEigenMatrixDerivedString(ROT_5_Y, rotation_j5.col(1));

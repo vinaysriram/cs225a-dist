@@ -28,6 +28,7 @@ static string ROT_5_Z                 = "::tasks::rot_5z";
 static string ROT_6_X                 = "::tasks::rot_6x";
 static string ROT_6_Y                 = "::tasks::rot_6y";
 static string ROT_6_Z                 = "::tasks::rot_6z";
+static string BARREL                  = "::tasks::barrel";
 
 static void parseCommandline(int argc, char** argv);
 static void glfwError(int error, const char* description);
@@ -93,8 +94,9 @@ int main(int argc, char** argv)
   glfwSetScrollCallback(window, mouseScroll);
   
   double last_cursorx, last_cursory;
-  Eigen::Vector3d x, j5pos, j6pos, r5x, r5y, r5z, r6x, r6y, r6z;     
-  auto sphere = new chai3d::cShapeSphere(0.07);
+  Eigen::Vector3d x, j5pos, j6pos, r5x, r5y, r5z, r6x, r6y, r6z, barrel_tip_pos;     
+  auto sphere = new chai3d::cShapeSphere(0.02);
+  auto sphere_2 = new chai3d::cShapeSphere(0.02);
   auto segment = new chai3d::cMultiSegment();
   auto segment5x = new chai3d::cMultiSegment();
   auto segment5y = new chai3d::cMultiSegment();
@@ -110,6 +112,7 @@ int main(int argc, char** argv)
   graphics->_world->addChild(segment6y);
   graphics->_world->addChild(segment6z);
   graphics->_world->addChild(sphere);
+  graphics->_world->addChild(sphere_2);
   chai3d::cColorf color_x, color_y, color_z, color;
   color.setWhite();
   color_x.setRed();
@@ -121,48 +124,49 @@ int main(int argc, char** argv)
     
     // read from Redis
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
+    robot->_q(6) = 1.74236968882; /* Manual Correction on Last Joint */
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
     redis_client.getEigenMatrixDerivedString(TARGET_POSITION_KEY, x);
     redis_client.getEigenMatrixDerivedString(J5_POSITION_KEY, j5pos);
     redis_client.getEigenMatrixDerivedString(J6_POSITION_KEY, j6pos);
+    redis_client.getEigenMatrixDerivedString(BARREL, barrel_tip_pos);
     redis_client.getEigenMatrixDerivedString(ROT_5_X, r5x);
-    cout << r5x.transpose() << endl;
     redis_client.getEigenMatrixDerivedString(ROT_5_Y, r5y);
     redis_client.getEigenMatrixDerivedString(ROT_5_Z, r5z);
     redis_client.getEigenMatrixDerivedString(ROT_6_X, r6x);
-    cout << r6x.transpose() << endl;
     redis_client.getEigenMatrixDerivedString(ROT_6_Y, r6y);
     redis_client.getEigenMatrixDerivedString(ROT_6_Z, r6z);
     
     segment->clear();
-    segment->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(x));
+    segment->newSegment(chai3d::cVector3d(barrel_tip_pos), chai3d::cVector3d(x));
     segment->setLineColor(color);
 
     segment5x->clear();
-    segment5x->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5x/3));
+    segment5x->newSegment(chai3d::cVector3d(j5pos-r5x/4), chai3d::cVector3d(j5pos+r5x/4));
     segment5x->setLineColor(color_x);
 
     segment5y->clear();
-    segment5y->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5y/3));
+    segment5y->newSegment(chai3d::cVector3d(j5pos-r5y/4), chai3d::cVector3d(j5pos+r5y/4));
     segment5y->setLineColor(color_y);
 
     segment5z->clear();
-    segment5z->newSegment(chai3d::cVector3d(j5pos), chai3d::cVector3d(j5pos+r5z/3));
+    segment5z->newSegment(chai3d::cVector3d(j5pos-r5z/4), chai3d::cVector3d(j5pos+r5z/4));
     segment5z->setLineColor(color_z);
 
     segment6x->clear();
-    segment6x->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6x/3));
+    segment6x->newSegment(chai3d::cVector3d(j6pos-r6x/4), chai3d::cVector3d(j6pos+r6x/4));
     segment6x->setLineColor(color_x);
     
     segment6y->clear();
-    segment6y->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6y/3));
+    segment6y->newSegment(chai3d::cVector3d(j6pos-r6y/4), chai3d::cVector3d(j6pos+r6y/4));
     segment6y->setLineColor(color_y);
     
     segment6z->clear();
-    segment6z->newSegment(chai3d::cVector3d(j6pos), chai3d::cVector3d(j6pos+r6z/3));
+    segment6z->newSegment(chai3d::cVector3d(j6pos-r6z/4), chai3d::cVector3d(j6pos+r6z/4));
     segment6z->setLineColor(color_z);
     
     sphere->setLocalPos(chai3d::cVector3d(x));
+    sphere_2->setLocalPos(chai3d::cVector3d(barrel_tip_pos));
     
     // update transformations
     robot->updateModel();
@@ -269,6 +273,7 @@ void parseCommandline(int argc, char** argv)
   ROT_6_X	          = REDIS_KEY_PREFIX + robot_name + ROT_6_X;
   ROT_6_Y                 = REDIS_KEY_PREFIX + robot_name + ROT_6_Y;
   ROT_6_Z                 = REDIS_KEY_PREFIX + robot_name + ROT_6_Z; 
+  BARREL                  = REDIS_KEY_PREFIX + robot_name + BARREL;
 }
 
 static void glfwError(int error, const char* description) {
