@@ -20,6 +20,7 @@ static const string REDIS_KEY_PREFIX  = "cs225a::robot::";
 static string JOINT_ANGLES_KEY        = "::sensors::q";
 static string JOINT_VELOCITIES_KEY    = "::sensors::dq";
 static string TARGET_POSITION_KEY     = "::tasks::tg_pos";
+static string TARGET_POSITION_KEY_2   = "::tasks::tg_pos_2";
 static string J5_POSITION_KEY         = "::tasks::j5_pos";
 static string J6_POSITION_KEY         = "::tasks::j6_pos";
 static string ROT_5_X                 = "::tasks::rot_5x";
@@ -264,6 +265,7 @@ void parseCommandline(int argc, char** argv)
   JOINT_VELOCITIES_KEY    = REDIS_KEY_PREFIX + robot_name + JOINT_VELOCITIES_KEY;  
   
   TARGET_POSITION_KEY     = REDIS_KEY_PREFIX + robot_name + TARGET_POSITION_KEY;
+  TARGET_POSITION_KEY_2   = REDIS_KEY_PREFIX + robot_name + TARGET_POSITION_KEY_2;
   J5_POSITION_KEY         = REDIS_KEY_PREFIX + robot_name + J5_POSITION_KEY;
   J6_POSITION_KEY         = REDIS_KEY_PREFIX + robot_name + J6_POSITION_KEY;
   
@@ -300,7 +302,10 @@ static void keySelect(GLFWwindow* window, int key, int scancode, int action, int
   case GLFW_KEY_D: x_target(1) = x_target(1) - 0.005; break;
   case GLFW_KEY_Q: x_target(0) = x_target(0) + 0.005; break;
   case GLFW_KEY_E: x_target(0) = x_target(0) - 0.005; break;
-  case GLFW_KEY_F: redis_client.set("servo_key", "1"); break;
+  case GLFW_KEY_F:
+    redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY_2, x_target);
+    redis_client.set("target_flag", "1"); break;
+    // redis_client.set("servo_key", "1"); break;
   default: break;
   }
   redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY, x_target);

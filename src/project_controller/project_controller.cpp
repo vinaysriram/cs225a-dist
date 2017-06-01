@@ -2,6 +2,8 @@
 #include "optitrack/OptiTrackClient.h"
 #include "redis/RedisClient.h"
 #include "timer/LoopTimer.h"
+#include <thread>
+#include <chrono>
 #include <Eigen/Dense>
 
 #include <cmath>
@@ -38,6 +40,7 @@ static std::string KV_JOINT_INIT_KEY = "";
 static std::string DESIRED_JOINT_POS = "";
 static std::string DESIRED_POS_KEY_OP = "";
 static std::string TARGET_POS_KEY_OP = "";
+static std::string TARGET_POS_KEY_OP_2 = "";
 static std::string J5_POS_KEY_OP = "";
 static std::string J6_POS_KEY_OP = "";
 static std::string ROT_5_X = "";
@@ -76,6 +79,7 @@ int main(int argc, char** argv)
   KV_JOINT_INIT_KEY           = "cs225a::robot::" + robot_name + "::tasks::kv_joint_init";
   DESIRED_JOINT_POS           = "cs225a::robot::" + robot_name + "::tasks::jt_pos_des";
   TARGET_POS_KEY_OP           = "cs225a::robot::" + robot_name + "::tasks::tg_pos";
+  TARGET_POS_KEY_OP_2         = "cs225a::robot::" + robot_name + "::tasks::tg_pos_2";
   J5_POS_KEY_OP               = "cs225a::robot::" + robot_name + "::tasks::j5_pos";
   J6_POS_KEY_OP               = "cs225a::robot::" + robot_name + "::tasks::j6_pos";   
   ROT_5_X                     = "cs225a::robot::" + robot_name + "::tasks::rot_5x";
@@ -192,15 +196,19 @@ int main(int argc, char** argv)
   Eigen::Vector3d barrel_tip_pos;
   Eigen::Vector3d measurementVector;
   Eigen::Vector3d offsetVector;
+  Eigen::Vector3d normal;
   
-  measurementVector << -0.0882647, -0.159753, -0.05;
-  //measurementVector << -0.100, -0.156, -0.05;
+  //measurementVector << -0.0882647, -0.159753, -0.05;
+  measurementVector << -0.100, -0.156, -0.05;
   offsetVector << 0, 0, 0.03;
-  target_pos = x_initial; target_pos(0) = target_pos(0) + 0.5;  
-  redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
+  target_pos = x_initial; target_pos(1) = target_pos(1) - 0.5;  
+  redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP_2, target_pos);
   cout << "Joint position initialized. Switching to operational space controller." << endl;
   
   // While window is open:
+  
+  redis_client.set("target_flag", "0");
+  
   while (runloop) {
     
     // Wait for next scheduled loop (controller must run at precise rate)
@@ -223,11 +231,11 @@ int main(int argc, char** argv)
     
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
-    redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
+    redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP_2, target_pos);    
     
     x_hat = barrel_tip_pos - target_pos; x_hat.normalize();
-    z_hat << 0, x_hat(2), -x_hat(1); z_hat.normalize();
-    y_hat = z_hat.cross(x_hat);
+    z_hat << x_hat(1), -x_hat(0), 0; z_hat.normalize();
+    y_hat << z_hat.cross(x_hat); 
     
     rotation_desired.col(0) = x_hat;
     rotation_desired.col(1) = y_hat;
@@ -256,24 +264,17 @@ int main(int argc, char** argv)
     robot->nullspaceMatrix(N, jw);
     robot->gravityVector(g);
     robot->orientationError(orient_error, rotation_desired, rotation_j5);
-    
-    /*
-    orient_error << 0, 0, 0;
-    for(int i = 0; i < 3; i++) {
-      rotation_vec1 << rotation_j5(0, i), rotation_j5(1, i), rotation_j5(2, i);
-      rotation_vec2 << rotation_desired(0, i), rotation_desired(1, i), rotation_desired(2, i);
-      orient_error = orient_error + rotation_vec1.cross(rotation_vec2);
+    if(orient_error.norm() < 0.000001 && redis_client.get("target_flag") == "1") {
+      cout << "Reached New Goal Point." << endl;
+      redis_client.set("target_flag", "0");
+      redis_client.set("servo_key", "1");
     }
-    orient_error = -orient_error/2;
-    */
-
     robot->taskInertiaMatrixWithPseudoInv(lambda, jw);
-    cout << orient_error.transpose() << endl;
-
     diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);    
     diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;
     command_torques = jw.transpose() * lambda * diff_rotation + N.transpose() * robot->_M * diff_joint + g;
-    
+
+    /* Publish Positions, Torques, and Frames */
     redis_client.setEigenMatrixDerivedString(J6_POS_KEY_OP, current_j6_pos);
     redis_client.setEigenMatrixDerivedString(J5_POS_KEY_OP, current_j5_pos);
     redis_client.setEigenMatrixDerivedString(BARREL, barrel_tip_pos);

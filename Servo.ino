@@ -60,7 +60,7 @@ void loop() {
 
   if (incomingFromRedis == 49){
     my_servo.write(ANGLE2);
-    delay(2000);
+    delay(1000);
     my_servo.write(ANGLE1);
 //    delay(2000);
     Serial.write(TRIGGER_CYCLE_COMPLETED);
