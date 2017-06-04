@@ -10,13 +10,8 @@ import time
 import serial
 
 
-# _____________________________Variables___________________________
-SERVO_KEY = "servo_key"
-TRIGGER_KEY = "trigger_key"
-
-
 # _____________________________Serial connection setup___________________________
-ports = ["/dev/ttyACM0", "/dev/ttyACM1"]
+ports = ["/dev/ttyUSB0"]
 
 print "..............................."
 print "checking ports"
@@ -28,7 +23,7 @@ for port in ports:
     except:
         print "Could not connect to port:", port
 
-print "Resetting Arduino Uno"
+print "Resetting Arduino Mini"
 while ser.read() != 'R': # Wait until message is received from Arduino that Uno board is done resetting
     pass
 print "Arduino Reset Completed"
@@ -42,22 +37,20 @@ print "..............................."
 
 # _____________________________________Main_________________________________________
 print "Running Arduino-Redis Driver"
-r.set(SERVO_KEY,"0")  # set servo_key to 0 to ensure servo is in initial postion when script is run
+r.set("target_key","0")  # set servo_key to 0 to ensure servo is in initial postion when script is run
+count = 1
 
 while True:
-    count = 0
-    while r.get(SERVO_KEY) == "1":
-        if count == 0:  # write to Serial port only once
-	    print "fire"
-            ser.write("1")
-            ser.flush()
-            ser.write("0")
-            ser.flush()
-            count = 1
-            
-        if ser.read() == 'T':
-            r.set(SERVO_KEY,"0")
-            r.set(TRIGGER_KEY,"1")
+	#print ser.read()
+        if ser.read() == 'T' and count == 1:
+		r.set("target_key","1")
+		print "HIT"
+		count = 0
+
+	elif ser.read() == 'S' and count == 0:
+		r.set("target_key","0")
+		print "Clear"
+		count = 1
 
 ser.close()
 

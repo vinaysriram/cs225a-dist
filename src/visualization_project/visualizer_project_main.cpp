@@ -303,9 +303,15 @@ static void keySelect(GLFWwindow* window, int key, int scancode, int action, int
   case GLFW_KEY_Q: x_target(0) = x_target(0) + 0.005; break;
   case GLFW_KEY_E: x_target(0) = x_target(0) - 0.005; break;
   case GLFW_KEY_F:
-    redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY_2, x_target);
-    redis_client.set("target_flag", "1"); break;
-    // redis_client.set("servo_key", "1"); break;
+    if(redis_client.get("mode_flag") == "1") {
+      redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY_2, x_target);
+      redis_client.set("target_flag", "1");
+    } else {
+      redis_client.set("servo_key", "1");
+    }
+    break;
+  case GLFW_KEY_G: redis_client.set("mode_flag", "1"); break;
+  case GLFW_KEY_H: redis_client.set("mode_flag", "0"); break;
   default: break;
   }
   redis_client.setEigenMatrixDerivedString(TARGET_POSITION_KEY, x_target);

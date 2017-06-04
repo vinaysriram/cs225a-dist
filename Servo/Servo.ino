@@ -8,13 +8,14 @@
  ************************************************************/
 
 /*---------------Includes-----------------------------------*/
-#include <Timers.h>
+// #include <Timers.h>
 #include <Servo.h>
 
 
 /*---------------Module Defines-----------------------------*/
+
 #define TIMER_2 2                 //Timer for interrupts
-#define TIME_INTERVAL 2000  //Time interval to run servo
+#define TIME_INTERVAL 1000  //Time interval to run servo
 
 #define SERVO_PIN 9
 
@@ -60,7 +61,7 @@ void loop() {
 
   if (incomingFromRedis == 49){
     my_servo.write(ANGLE2);
-    delay(1000);
+    delay(2000);
     my_servo.write(ANGLE1);
 //    delay(2000);
     Serial.write(TRIGGER_CYCLE_COMPLETED);

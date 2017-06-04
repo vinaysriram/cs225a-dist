@@ -50,6 +50,7 @@ static std::string ROT_6_X = "";
 static std::string ROT_6_Y = "";
 static std::string ROT_6_Z = "";
 static std::string BARREL = "";
+static std::string LAG_ANGLES = "";
 
 void parseCommandline(int argc, char** argv)
 {
@@ -89,6 +90,7 @@ int main(int argc, char** argv)
   ROT_6_Y                     = "cs225a::robot::" + robot_name + "::tasks::rot_6y";
   ROT_6_Z                     = "cs225a::robot::" + robot_name + "::tasks::rot_6z";
   BARREL                      = "cs225a::robot::" + robot_name + "::tasks::barrel";
+  LAG_ANGLES                  = "cs225a::robot::" + robot_name + "::tasks::lag_q";
   
   cout << "Loading URDF world model file: " << world_file << endl;
   cout << JOINT_ANGLES_KEY << endl;
@@ -196,13 +198,17 @@ int main(int argc, char** argv)
   Eigen::Vector3d barrel_tip_pos;
   Eigen::Vector3d measurementVector;
   Eigen::Vector3d offsetVector;
+  Eigen::VectorXd lagAngles(7);
   Eigen::Vector3d normal;
   
-  //measurementVector << -0.0882647, -0.159753, -0.05;
   measurementVector << -0.100, -0.156, -0.05;
   offsetVector << 0, 0, 0.03;
-  target_pos = x_initial; target_pos(1) = target_pos(1) - 0.5;  
+  lagAngles = q_initial;
+  target_pos = x_initial;
+  target_pos(1) = target_pos(1) - 0.5;  
+  redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);
   redis_client.setEigenMatrixDerivedString(TARGET_POS_KEY_OP_2, target_pos);
+  redis_client.setEigenMatrixDerivedString(LAG_ANGLES, lagAngles);
   cout << "Joint position initialized. Switching to operational space controller." << endl;
   
   // While window is open:
@@ -230,8 +236,13 @@ int main(int argc, char** argv)
     barrel_tip_pos = rotation_j6 * measurementVector + current_j6_pos;
     
     redis_client.getEigenMatrixDerivedString(JOINT_ANGLES_KEY, robot->_q);
+    redis_client.getEigenMatrixDerivedString(LAG_ANGLES, lagAngles);
     redis_client.getEigenMatrixDerivedString(JOINT_VELOCITIES_KEY, robot->_dq);
-    redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP_2, target_pos);    
+    if(redis_client.get("mode_flag") == "1") {
+      redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP_2, target_pos); 
+    } else {
+      redis_client.getEigenMatrixDerivedString(TARGET_POS_KEY_OP, target_pos);    
+    }
     
     x_hat = barrel_tip_pos - target_pos; x_hat.normalize();
     z_hat << x_hat(1), -x_hat(0), 0; z_hat.normalize();
@@ -264,11 +275,19 @@ int main(int argc, char** argv)
     robot->nullspaceMatrix(N, jw);
     robot->gravityVector(g);
     robot->orientationError(orient_error, rotation_desired, rotation_j5);
-    if(orient_error.norm() < 0.000001 && redis_client.get("target_flag") == "1") {
-      cout << "Reached New Goal Point." << endl;
-      redis_client.set("target_flag", "0");
-      redis_client.set("servo_key", "1");
+
+    if(redis_client.get("mode_flag") == "1") {
+      double lagError = 0;
+      for(int i = 0; i < 6; i++) {
+	lagError += (lagAngles(i) - robot->_q(i))*(lagAngles(i) - robot->_q(i));
+      }
+      if(orient_error.norm() < 0.00001 && lagError < 0.001 && redis_client.get("target_flag") == "1") {
+	cout << "Reached New Goal Point." << endl;
+	redis_client.set("target_flag", "0");
+	redis_client.set("servo_key", "1");
+      }
     }
+
     robot->taskInertiaMatrixWithPseudoInv(lambda, jw);
     diff_rotation  = (-kp_ori*orient_error) + (-kv_ori*current_angl_vel);    
     diff_joint = kp_joint * (q_initial - robot->_q) - kv_joint * robot->_dq;

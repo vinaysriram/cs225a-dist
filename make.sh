@@ -83,6 +83,7 @@ chmod +x make.sh
 if [ -f 'project_controller' ]; then
     cat <<EOF > init_controller.sh
 redis-cli flushall
+redis-cli set mode_flag 1
 redis-cli set cs225a::robot::sawyer::tasks::kp_pos 300
 redis-cli set cs225a::robot::sawyer::tasks::kv_pos 40
 redis-cli set cs225a::robot::sawyer::tasks::kp_ori 300
