@@ -6,7 +6,7 @@ Repository for class resources: CS225a experimental robotics
 
 2. Clone this repository
 
-   ```git clone https://github.com/tmigimatsu/cs225a-dist.git cs225a.git```
+   ```git clone https://github.com/vinaysriram/cs225a-dist.git cs225a.git```
 
 3. Download sai2-simulation.zip from AFS and extract its contents into cs225a.git/sai2-simulation.
 
